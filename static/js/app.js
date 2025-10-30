@@ -190,11 +190,12 @@ function addToHistory(text) {
     timeSpan.textContent = `[${timestamp}]`;
     p.appendChild(timeSpan);
 
-    historyDiv.appendChild(p);
+    // Ajouter en HAUT de l'historique (texte le plus récent en premier)
+    historyDiv.insertBefore(p, historyDiv.firstChild);
 
-    // Défilement automatique
+    // Défilement automatique vers le haut
     if (autoScroll) {
-        historyDiv.scrollTop = historyDiv.scrollHeight;
+        historyDiv.scrollTop = 0;
     }
 
     // Réinitialiser le timer d'auto-effacement

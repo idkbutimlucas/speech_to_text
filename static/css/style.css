@@ -36,15 +36,20 @@ body {
     color: var(--text-color);
     line-height: 1.6;
     transition: background-color 0.3s, color 0.3s;
+    overflow: hidden;
+    height: 100vh;
+    margin: 0;
+    padding: 0;
 }
 
 .container {
     max-width: 1200px;
     margin: 0 auto;
     padding: 20px;
-    min-height: 100vh;
+    height: 100vh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 /* Header */
@@ -97,6 +102,8 @@ main {
     display: flex;
     flex-direction: column;
     gap: 20px;
+    overflow: hidden;
+    min-height: 0;
 }
 
 /* Controls */
@@ -151,6 +158,7 @@ main {
     flex-direction: column;
     gap: 20px;
     overflow: hidden;
+    min-height: 0;
 }
 
 .current-text {

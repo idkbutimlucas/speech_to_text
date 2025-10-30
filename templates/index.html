@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcription Vocale</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎤 Transcription Vocale</h1>
+            <div class="status" id="status">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">En attente</span>
+            </div>
+        </header>
+
+        <main>
+            <div class="transcription-container">
+                <div id="currentText" class="current-text"></div>
+                <div id="transcriptionHistory" class="history"></div>
+            </div>
+        </main>
+
+        <footer>
+            <button id="settingsBtn" class="btn-settings">⚙️</button>
+        </footer>
+    </div>
+
+    <!-- Modal des paramètres -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Paramètres</h2>
+
+            <div class="setting-group">
+                <label for="fontSize">Taille du texte:</label>
+                <input type="range" id="fontSize" min="30" max="100" value="60">
+                <span id="fontSizeValue">60px</span>
+            </div>
+
+            <div class="setting-group">
+                <label for="themeToggle">Mode:</label>
+                <button id="themeToggle" class="btn">🌙 Mode Sombre</button>
+            </div>
+
+            <div class="setting-group">
+                <label for="autoClearDelay">Effacement automatique:</label>
+                <select id="autoClearDelay">
+                    <option value="0">Désactivé</option>
+                    <option value="30" selected>30 secondes</option>
+                    <option value="60">1 minute</option>
+                    <option value="120">2 minutes</option>
+                </select>
+            </div>
+
+            <div class="setting-group">
+                <label>
+                    <input type="checkbox" id="autoScroll" checked>
+                    Défilement automatique
+                </label>
+            </div>
+
+            <div class="setting-group">
+                <button id="manualClearBtn" class="btn btn-clear-manual">
+                    🗑️ Effacer maintenant
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

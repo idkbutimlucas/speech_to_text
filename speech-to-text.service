@@ -1,0 +1,15 @@
+[Unit]
+Description=Application Speech-to-Text pour Grand-Mère
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/speech_to_text
+Environment="PATH=/home/pi/speech_to_text/venv/bin"
+ExecStart=/home/pi/speech_to_text/venv/bin/python3 /home/pi/speech_to_text/app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

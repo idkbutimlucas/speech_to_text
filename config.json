@@ -1,0 +1,25 @@
+{
+  "app": {
+    "name": "Speech-to-Text pour Grand-Mère",
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false,
+    "auto_start": true
+  },
+  "audio": {
+    "sample_rate": 16000,
+    "block_size": 8000,
+    "channels": 1
+  },
+  "vosk": {
+    "model_path": "models/vosk-model-small-fr-0.22",
+    "language": "fr"
+  },
+  "ui": {
+    "default_font_size": 60,
+    "default_theme": "light",
+    "auto_scroll": true,
+    "show_timestamps": true,
+    "auto_clear_delay": 30
+  }
+}

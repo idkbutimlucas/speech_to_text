@@ -8,25 +8,16 @@
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🎤 Transcription Vocale</h1>
-            <div class="status" id="status">
-                <span class="status-indicator" id="statusIndicator"></span>
-                <span id="statusText">En attente</span>
-            </div>
-        </header>
+    <!-- Bouton paramètres discret en haut à droite -->
+    <button id="settingsBtn" class="btn-settings">⚙️</button>
 
+    <div class="container">
         <main>
             <div class="transcription-container">
                 <div id="currentText" class="current-text"></div>
                 <div id="transcriptionHistory" class="history"></div>
             </div>
         </main>
-
-        <footer>
-            <button id="settingsBtn" class="btn-settings">⚙️</button>
-        </footer>
     </div>
 
     <!-- Modal des paramètres -->

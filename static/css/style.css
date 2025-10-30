@@ -80,51 +80,6 @@ main {
     min-height: 0;
 }
 
-/* Controls */
-.controls {
-    display: flex;
-    gap: 15px;
-    justify-content: center;
-    flex-wrap: wrap;
-}
-
-.btn {
-    font-size: 2rem;
-    padding: 20px 40px;
-    border: none;
-    border-radius: 15px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: transform 0.2s, opacity 0.2s;
-    color: white;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.btn:hover:not(:disabled) {
-    transform: scale(1.05);
-}
-
-.btn:active:not(:disabled) {
-    transform: scale(0.95);
-}
-
-.btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.btn-start {
-    background-color: var(--btn-start);
-}
-
-.btn-stop {
-    background-color: var(--btn-stop);
-}
-
-.btn-clear {
-    background-color: var(--btn-clear);
-}
-
 /* Transcription */
 .transcription-container {
     flex: 1;
@@ -206,32 +161,36 @@ main {
 }
 
 .modal-content h2 {
-    font-size: 2.5rem;
+    font-size: 2rem;
     margin-bottom: 30px;
+    font-weight: 400;
 }
 
 .close {
     color: var(--text-color);
     float: right;
-    font-size: 3rem;
-    font-weight: bold;
+    font-size: 2.5rem;
+    font-weight: 300;
     cursor: pointer;
     line-height: 1;
+    opacity: 0.5;
+    transition: opacity 0.2s;
 }
 
 .close:hover {
-    opacity: 0.7;
+    opacity: 1;
 }
 
 .setting-group {
-    margin-bottom: 30px;
-    font-size: 1.5rem;
+    margin-bottom: 25px;
+    font-size: 1.2rem;
 }
 
 .setting-group label {
     display: block;
     margin-bottom: 10px;
-    font-weight: 600;
+    font-weight: 400;
+    opacity: 0.8;
 }
 
 .setting-group input[type="range"] {
@@ -249,30 +208,55 @@ main {
 
 .setting-group select {
     width: 100%;
-    padding: 10px 15px;
-    font-size: 1.3rem;
-    border: 2px solid var(--border-color);
-    border-radius: 8px;
+    padding: 12px 15px;
+    font-size: 1.1rem;
+    border: 1px solid var(--separator-color);
+    border-radius: 6px;
     background-color: var(--bg-color);
     color: var(--text-color);
     cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.setting-group select:hover {
+    border-color: var(--settings-color);
+}
+
+/* Boutons dans les paramètres */
+.setting-group .btn {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 1.1rem;
+    border: 1px solid var(--separator-color);
+    border-radius: 6px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    cursor: pointer;
+    font-weight: 400;
+    transition: all 0.2s;
+}
+
+.setting-group .btn:hover {
+    border-color: var(--settings-color);
+    background-color: var(--current-bg);
 }
 
 .btn-clear-manual {
     width: 100%;
-    font-size: 1.8rem;
-    padding: 15px 30px;
-    background-color: var(--btn-clear);
-    border: none;
-    border-radius: 10px;
+    font-size: 1.1rem;
+    padding: 12px 20px;
+    background-color: var(--bg-color);
+    border: 1px solid var(--separator-color);
+    border-radius: 6px;
     cursor: pointer;
-    font-weight: bold;
-    transition: transform 0.2s, opacity 0.2s;
-    color: white;
+    font-weight: 400;
+    transition: all 0.2s;
+    color: var(--text-color);
 }
 
 .btn-clear-manual:hover {
-    transform: scale(1.02);
+    border-color: var(--settings-color);
+    background-color: var(--current-bg);
 }
 
 .btn-clear-manual:active {

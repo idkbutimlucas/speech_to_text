@@ -2,6 +2,25 @@
 
 Application de transcription vocale en temps réel pour personnes malentendantes, optimisée pour Raspberry Pi. Tout fonctionne en local, sans nécessiter de connexion internet ou de services cloud.
 
+## 🚀 Deux versions disponibles
+
+### Version Desktop (Recommandée)
+Application native Tkinter - **Plus performante et rapide**
+- 📖 Voir [README_DESKTOP.md](README_DESKTOP.md) pour les instructions complètes
+- ⚡ Latence réduite (~50-100ms)
+- 💻 Interface native, démarrage en 2-3 secondes
+- 🎯 Idéal pour Raspberry Pi
+
+### Version Web (Ce fichier)
+Application web Flask avec navigateur
+- 🌐 Interface web accessible via navigateur
+- 📱 Peut être consultée depuis d'autres appareils du réseau
+- 🔧 Plus flexible pour le développement
+
+**Pour votre grand-mère, nous recommandons la version Desktop !**
+
+---
+
 ## Caractéristiques
 
 - ✅ **100% Local** - Aucune donnée envoyée sur internet

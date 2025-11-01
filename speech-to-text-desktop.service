@@ -1,0 +1,16 @@
+[Unit]
+Description=Application Speech-to-Text Desktop
+After=graphical.target
+
+[Service]
+Type=simple
+User=pi
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/pi/.Xauthority"
+WorkingDirectory=/home/pi/speech_to_text
+ExecStart=/home/pi/speech_to_text/venv/bin/python3 /home/pi/speech_to_text/app_desktop.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=graphical.target

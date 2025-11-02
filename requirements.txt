@@ -6,3 +6,10 @@ sounddevice>=0.4.6
 numpy>=1.26.0
 python-engineio>=4.8.0
 cffi>=1.15.0
+
+# Nouvelles dépendances pour améliorations
+webrtcvad>=2.0.10          # Voice Activity Detection
+noisereduce>=3.0.0         # Filtrage du bruit
+librosa>=0.10.0            # Traitement audio avancé
+deepmultilingualpunctuation>=1.0.1  # Ponctuation automatique
+psutil>=5.9.0              # Statistiques système

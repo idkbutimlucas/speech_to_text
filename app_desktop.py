@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""
-Application Desktop pour la reconnaissance vocale locale avec Vosk
-Version Tkinter - Plus performante que la version web
-"""
 import json
 import os
 import queue
 import sounddevice as sd
 import vosk
 import tkinter as tk
-from tkinter import ttk, scrolledtext
+from tkinter import ttk, scrolledtext, messagebox
 import threading
 from datetime import datetime
+import numpy as np
 
-# Configuration
+from audio_utils import (
+    VoiceActivityDetector,
+    NoiseReducer,
+    AudioLevelMeter,
+    SmartPunctuator,
+    EmergencyDetector
+)
+from database import get_database
+from stats_manager import get_stats_manager
+
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 8000
+BLOCK_SIZE = 2000
 MODEL_PATH = "models/vosk-model-small-fr-0.22"
 CONFIG_FILE = "config.json"
+MAX_QUEUE_SIZE = 10
 
 # Variables globales
 model = None
@@ -25,24 +32,39 @@ audio_queue = queue.Queue()
 is_recording = False
 recognition_thread_obj = None
 
+# Instances des utilitaires
+vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=2)
+noise_reducer = NoiseReducer(sample_rate=SAMPLE_RATE)
+audio_meter = AudioLevelMeter()
+punctuator = SmartPunctuator()
+emergency_detector = EmergencyDetector()
+db = get_database()
+stats = get_stats_manager()
+
 
 class SpeechToTextApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Transcription Vocale")
+        self.root.title("Transcription Vocale - Version Améliorée")
 
         # Configuration par défaut
         self.config = {
             'font_size': 60,
             'theme': 'light',
             'auto_clear_delay': 30,
-            'auto_scroll': True
+            'auto_scroll': True,
+            'enable_vad': True,
+            'enable_noise_reduction': True,
+            'enable_punctuation': True,
+            'enable_emergency_detection': True
         }
         self.load_config()
 
         # Variables
         self.auto_clear_timer = None
         self.current_theme = self.config['theme']
+        self.stats_window = None
+        self.emergency_flash_active = False
 
         # Couleurs pour les thèmes
         self.themes = {
@@ -52,7 +74,8 @@ class SpeechToTextApp:
                 'current_bg': '#f8f8f8',
                 'history_bg': '#ffffff',
                 'separator': '#e0e0e0',
-                'settings_btn': '#888888'
+                'settings_btn': '#888888',
+                'emergency': '#ff0000'
             },
             'dark': {
                 'bg': '#1a1a1a',
@@ -60,7 +83,8 @@ class SpeechToTextApp:
                 'current_bg': '#252525',
                 'history_bg': '#1a1a1a',
                 'separator': '#333333',
-                'settings_btn': '#666666'
+                'settings_btn': '#666666',
+                'emergency': '#ff3333'
             }
         }
 
@@ -70,6 +94,9 @@ class SpeechToTextApp:
         # Démarrer la reconnaissance automatiquement
         self.root.after(1000, self.start_recording)
 
+        # Rafraîchir les stats toutes les 2 secondes
+        self.update_stats_display()
+
     def setup_ui(self):
         """Configure l'interface utilisateur"""
         # Plein écran
@@ -78,6 +105,34 @@ class SpeechToTextApp:
         # Frame principale
         main_frame = tk.Frame(self.root)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+
+        # Barre supérieure avec indicateurs
+        top_bar = tk.Frame(self.root, height=40)
+        top_bar.pack(side=tk.TOP, fill=tk.X, padx=20, pady=(10, 0))
+
+        # Indicateur de niveau audio (barre de progression)
+        self.audio_level_label = tk.Label(top_bar, text="🎤", font=('Arial', 16))
+        self.audio_level_label.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.audio_level_bar = ttk.Progressbar(
+            top_bar,
+            orient=tk.HORIZONTAL,
+            length=200,
+            mode='determinate'
+        )
+        self.audio_level_bar.pack(side=tk.LEFT, padx=(0, 20))
+
+        # Bouton statistiques
+        self.stats_btn = tk.Button(
+            top_bar,
+            text="📊",
+            font=('Arial', 16),
+            command=self.show_stats,
+            relief=tk.FLAT,
+            borderwidth=0,
+            cursor='hand2'
+        )
+        self.stats_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         # Bouton paramètres (discret en haut à droite)
         self.settings_btn = tk.Button(
@@ -107,6 +162,7 @@ class SpeechToTextApp:
         # Séparateur
         separator = tk.Frame(main_frame, height=1)
         separator.pack(fill=tk.X, pady=5)
+        self.separator = separator
 
         # Zone historique (scrollable)
         history_frame = tk.Frame(main_frame)
@@ -124,6 +180,9 @@ class SpeechToTextApp:
         self.history_text.pack(fill=tk.BOTH, expand=True)
         self.history_text.config(state=tk.DISABLED)
 
+        # Tag pour texte d'urgence
+        self.history_text.tag_config('emergency', foreground='red', font=('Arial', int(self.config['font_size'] * 0.8), 'bold'))
+
         # Bind pour quitter en plein écran (Escape)
         self.root.bind('<Escape>', lambda e: self.toggle_fullscreen())
 
@@ -131,7 +190,7 @@ class SpeechToTextApp:
         """Affiche la fenêtre de paramètres"""
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Paramètres")
-        settings_window.geometry("500x500")
+        settings_window.geometry("600x700")
         settings_window.resizable(False, False)
 
         # Centrer la fenêtre
@@ -142,8 +201,11 @@ class SpeechToTextApp:
         frame.pack(fill=tk.BOTH, expand=True)
 
         # Titre
-        title = tk.Label(frame, text="Paramètres", font=('Arial', 20))
+        title = tk.Label(frame, text="Paramètres", font=('Arial', 20, 'bold'))
         title.pack(pady=(0, 20))
+
+        # --- AFFICHAGE ---
+        tk.Label(frame, text="AFFICHAGE", font=('Arial', 14, 'bold')).pack(anchor='w', pady=(10, 5))
 
         # Taille du texte
         tk.Label(frame, text="Taille du texte:", font=('Arial', 12)).pack(anchor='w', pady=(10, 5))
@@ -184,21 +246,61 @@ class SpeechToTextApp:
         )
         theme_btn.pack(fill=tk.X, pady=(0, 10))
 
+        # --- FONCTIONNALITÉS ---
+        tk.Label(frame, text="FONCTIONNALITÉS", font=('Arial', 14, 'bold')).pack(anchor='w', pady=(20, 5))
+
+        # VAD
+        vad_var = tk.BooleanVar(value=self.config.get('enable_vad', True))
+        tk.Checkbutton(
+            frame,
+            text="Détection de voix (VAD) - Réduit la charge CPU",
+            variable=vad_var,
+            font=('Arial', 11),
+            command=lambda: self.config.update({'enable_vad': vad_var.get()})
+        ).pack(anchor='w', pady=5)
+
+        # Réduction de bruit
+        noise_var = tk.BooleanVar(value=self.config.get('enable_noise_reduction', True))
+        tk.Checkbutton(
+            frame,
+            text="Réduction de bruit - Meilleure précision",
+            variable=noise_var,
+            font=('Arial', 11),
+            command=lambda: self.config.update({'enable_noise_reduction': noise_var.get()})
+        ).pack(anchor='w', pady=5)
+
+        # Ponctuation
+        punct_var = tk.BooleanVar(value=self.config.get('enable_punctuation', True))
+        tk.Checkbutton(
+            frame,
+            text="Ponctuation automatique - Plus lisible",
+            variable=punct_var,
+            font=('Arial', 11),
+            command=lambda: self.config.update({'enable_punctuation': punct_var.get()})
+        ).pack(anchor='w', pady=5)
+
+        # Détection d'urgence
+        emergency_var = tk.BooleanVar(value=self.config.get('enable_emergency_detection', True))
+        tk.Checkbutton(
+            frame,
+            text="Détection d'urgence - Alerte visuelle",
+            variable=emergency_var,
+            font=('Arial', 11),
+            command=lambda: self.config.update({'enable_emergency_detection': emergency_var.get()})
+        ).pack(anchor='w', pady=5)
+
         # Effacement automatique
-        tk.Label(frame, text="Effacement automatique:", font=('Arial', 12)).pack(anchor='w', pady=(10, 5))
+        tk.Label(frame, text="Effacement automatique:", font=('Arial', 12)).pack(anchor='w', pady=(15, 5))
 
         auto_clear_var = tk.StringVar(value=str(self.config['auto_clear_delay']))
         auto_clear_combo = ttk.Combobox(
             frame,
             textvariable=auto_clear_var,
-            values=['0', '30', '60', '120'],
+            values=['0', '30', '60', '120', '300'],
             state='readonly',
             font=('Arial', 11)
         )
         auto_clear_combo.pack(fill=tk.X, pady=(0, 10))
-
-        # Mapping des valeurs pour affichage
-        delay_labels = {'0': 'Désactivé', '30': '30 secondes', '60': '1 minute', '120': '2 minutes'}
 
         def update_auto_clear(event):
             delay = int(auto_clear_var.get())
@@ -222,15 +324,28 @@ class SpeechToTextApp:
         )
         auto_scroll_check.pack(anchor='w', pady=(10, 10))
 
+        # Boutons d'action
+        tk.Label(frame, text="ACTIONS", font=('Arial', 14, 'bold')).pack(anchor='w', pady=(20, 10))
+
         # Bouton effacer
         clear_btn = tk.Button(
             frame,
-            text="🗑️ Effacer maintenant",
+            text="🗑️ Effacer l'écran maintenant",
             font=('Arial', 12),
             command=lambda: [self.clear_history(), settings_window.destroy()],
             cursor='hand2'
         )
-        clear_btn.pack(fill=tk.X, pady=(20, 10))
+        clear_btn.pack(fill=tk.X, pady=(0, 10))
+
+        # Bouton exporter
+        export_btn = tk.Button(
+            frame,
+            text="💾 Exporter l'historique",
+            font=('Arial', 12),
+            command=self.export_history,
+            cursor='hand2'
+        )
+        export_btn.pack(fill=tk.X, pady=(0, 10))
 
         # Bouton fermer
         close_btn = tk.Button(
@@ -238,9 +353,82 @@ class SpeechToTextApp:
             text="Fermer",
             font=('Arial', 12),
             command=lambda: [self.save_config(), settings_window.destroy()],
-            cursor='hand2'
+            cursor='hand2',
+            bg='#4CAF50',
+            fg='white'
         )
-        close_btn.pack(fill=tk.X, pady=(10, 0))
+        close_btn.pack(fill=tk.X, pady=(20, 0))
+
+    def show_stats(self):
+        """Afficher les statistiques"""
+        if self.stats_window and tk.Toplevel.winfo_exists(self.stats_window):
+            self.stats_window.lift()
+            return
+
+        self.stats_window = tk.Toplevel(self.root)
+        self.stats_window.title("Statistiques")
+        self.stats_window.geometry("500x600")
+        self.stats_window.resizable(False, False)
+
+        frame = tk.Frame(self.stats_window, padx=20, pady=20)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        title = tk.Label(frame, text="Statistiques en temps réel", font=('Arial', 18, 'bold'))
+        title.pack(pady=(0, 20))
+
+        # Créer les labels de stats
+        self.stats_labels = {}
+
+        sections = [
+            ("📊 Application", ['uptime', 'total_transcriptions', 'total_words', 'avg_words']),
+            ("💻 Système", ['cpu', 'memory', 'disk']),
+            ("🎤 Audio", ['audio_level', 'avg_audio'])
+        ]
+
+        for section_name, keys in sections:
+            tk.Label(frame, text=section_name, font=('Arial', 14, 'bold')).pack(anchor='w', pady=(15, 5))
+
+            for key in keys:
+                label = tk.Label(frame, text="", font=('Arial', 11), anchor='w')
+                label.pack(anchor='w', padx=(10, 0), pady=2)
+                self.stats_labels[key] = label
+
+        # Rafraîchir les stats
+        self.refresh_stats_window()
+
+    def refresh_stats_window(self):
+        """Rafraîchir les statistiques dans la fenêtre"""
+        if not self.stats_window or not tk.Toplevel.winfo_exists(self.stats_window):
+            return
+
+        all_stats = stats.get_all_stats()
+        system = all_stats['system']
+        app = all_stats['app']
+        audio = all_stats['audio']
+
+        # Mettre à jour les labels
+        self.stats_labels['uptime'].config(text=f"Temps de fonctionnement: {app['uptime']}")
+        self.stats_labels['total_transcriptions'].config(text=f"Transcriptions: {app['total_transcriptions']}")
+        self.stats_labels['total_words'].config(text=f"Mots reconnus: {app['total_words']}")
+        self.stats_labels['avg_words'].config(text=f"Mots/transcription: {app['avg_words_per_transcription']}")
+
+        self.stats_labels['cpu'].config(text=f"CPU: {system['cpu']['percent']}% (moy: {system['cpu']['avg_1min']}%)")
+        self.stats_labels['memory'].config(text=f"Mémoire: {system['memory']['percent']}% ({system['memory']['used_mb']} MB)")
+        self.stats_labels['disk'].config(text=f"Disque: {system['disk']['percent']}% (libre: {system['disk']['free_gb']} GB)")
+
+        self.stats_labels['audio_level'].config(text=f"Niveau actuel: {audio['current_level']}%")
+        self.stats_labels['avg_audio'].config(text=f"Niveau moyen: {audio['avg_level']}%")
+
+        # Rafraîchir toutes les 2 secondes
+        self.stats_window.after(2000, self.refresh_stats_window)
+
+    def update_stats_display(self):
+        """Mettre à jour l'affichage des statistiques (barre de niveau audio)"""
+        level = audio_meter.get_average_level()
+        self.audio_level_bar['value'] = level
+
+        # Continuer à rafraîchir
+        self.root.after(100, self.update_stats_display)
 
     def toggle_theme(self, button=None):
         """Basculer entre mode clair et sombre"""
@@ -264,6 +452,8 @@ class SpeechToTextApp:
         self.current_text.config(bg=theme['current_bg'], fg=theme['fg'])
         self.history_text.config(bg=theme['history_bg'], fg=theme['fg'], insertbackground=theme['fg'])
         self.settings_btn.config(bg=theme['bg'], fg=theme['settings_btn'], activebackground=theme['bg'])
+        self.stats_btn.config(bg=theme['bg'], fg=theme['settings_btn'], activebackground=theme['bg'])
+        self.separator.config(bg=theme['separator'])
 
     def apply_font_size(self):
         """Appliquer la taille de police"""
@@ -275,12 +465,17 @@ class SpeechToTextApp:
         current = self.root.attributes('-fullscreen')
         self.root.attributes('-fullscreen', not current)
 
-    def add_to_history(self, text):
+    def add_to_history(self, text, is_emergency=False):
         """Ajouter une transcription à l'historique"""
         timestamp = datetime.now().strftime("%H:%M")
 
         self.history_text.config(state=tk.NORMAL)
-        self.history_text.insert('1.0', f"{text} [{timestamp}]\n\n")
+
+        display_text = text
+        if is_emergency:
+            display_text = f"⚠️ {text}"
+
+        self.history_text.insert('1.0', f"{display_text} [{timestamp}]\n\n", 'emergency' if is_emergency else '')
         self.history_text.config(state=tk.DISABLED)
 
         # Défilement automatique vers le haut
@@ -289,6 +484,35 @@ class SpeechToTextApp:
 
         # Réinitialiser le timer d'effacement automatique
         self.reset_auto_clear_timer()
+
+        # Flash d'urgence
+        if is_emergency:
+            self.trigger_emergency_flash()
+
+    def trigger_emergency_flash(self):
+        """Déclencher un flash visuel d'urgence"""
+        if self.emergency_flash_active:
+            return
+
+        self.emergency_flash_active = True
+        theme = self.themes[self.current_theme]
+        original_bg = theme['current_bg']
+        emergency_color = theme['emergency']
+
+        def flash(count=0):
+            if count >= 6:  # 3 flashs (on/off)
+                self.current_text.config(bg=original_bg)
+                self.emergency_flash_active = False
+                return
+
+            if count % 2 == 0:
+                self.current_text.config(bg=emergency_color)
+            else:
+                self.current_text.config(bg=original_bg)
+
+            self.root.after(300, lambda: flash(count + 1))
+
+        flash()
 
     def clear_history(self):
         """Effacer l'historique"""
@@ -320,12 +544,21 @@ class SpeechToTextApp:
             is_recording = True
             recognition_thread_obj = threading.Thread(target=recognition_loop, args=(self,), daemon=True)
             recognition_thread_obj.start()
-            print("Reconnaissance vocale démarrée")
+            print("Reconnaissance vocale démarrée avec améliorations")
 
     def stop_recording(self):
         """Arrêter la reconnaissance vocale"""
         global is_recording
         is_recording = False
+
+    def export_history(self):
+        """Exporter l'historique en fichier texte"""
+        try:
+            filename = f"transcription_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            count = db.export_to_text(filename)
+            messagebox.showinfo("Export réussi", f"{count} transcriptions exportées dans {filename}")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors de l'export: {e}")
 
     def load_config(self):
         """Charger la configuration depuis le fichier"""
@@ -356,11 +589,19 @@ def audio_callback(indata, frames, time, status):
     """Callback pour capturer l'audio"""
     if status:
         print(f"Statut audio: {status}")
+
+    # Gestion intelligente de la queue (limite la taille)
+    if audio_queue.qsize() > MAX_QUEUE_SIZE:
+        try:
+            audio_queue.get_nowait()  # Supprimer le plus ancien
+        except queue.Empty:
+            pass
+
     audio_queue.put(bytes(indata))
 
 
 def recognition_loop(app):
-    """Boucle de reconnaissance vocale"""
+    """Boucle de reconnaissance vocale AMÉLIORÉE"""
     global is_recording, model
 
     rec = vosk.KaldiRecognizer(model, SAMPLE_RATE)
@@ -373,7 +614,11 @@ def recognition_loop(app):
         channels=1,
         callback=audio_callback
     ):
-        print("Écoute en cours...")
+        print("🎤 Écoute en cours avec améliorations...")
+        print(f"  VAD: {app.config.get('enable_vad', True)}")
+        print(f"  Réduction bruit: {app.config.get('enable_noise_reduction', True)}")
+        print(f"  Ponctuation: {app.config.get('enable_punctuation', True)}")
+        print(f"  Détection urgence: {app.config.get('enable_emergency_detection', True)}")
 
         while is_recording:
             try:
@@ -381,11 +626,50 @@ def recognition_loop(app):
             except queue.Empty:
                 continue
 
+            # Mesurer le niveau audio
+            audio_level = audio_meter.get_level(data)
+
+            # VAD: Ne traiter que si c'est de la parole
+            if app.config.get('enable_vad', True):
+                if not vad.is_speech(data):
+                    continue  # Ignorer le silence
+
+            # Réduction de bruit
+            if app.config.get('enable_noise_reduction', True):
+                data = noise_reducer.reduce_noise(data)
+
+            # Reconnaissance Vosk
             if rec.AcceptWaveform(data):
                 result = json.loads(rec.Result())
                 if result.get('text'):
-                    # Texte final
-                    app.root.after(0, app.add_to_history, result['text'])
+                    text = result['text']
+
+                    # Ponctuation automatique
+                    if app.config.get('enable_punctuation', True):
+                        text = punctuator.add_punctuation(text)
+
+                    # Détection d'urgence
+                    is_emergency = False
+                    emergency_words = []
+                    if app.config.get('enable_emergency_detection', True):
+                        is_emergency = emergency_detector.check_emergency(text)
+                        if is_emergency:
+                            emergency_words = emergency_detector.get_emergency_words(text)
+                            print(f"⚠️ URGENCE DÉTECTÉE: {emergency_words}")
+
+                    # Sauvegarder dans la base de données
+                    db.add_transcription(
+                        text,
+                        has_emergency=is_emergency,
+                        emergency_words=emergency_words,
+                        audio_level=audio_level
+                    )
+
+                    # Mettre à jour les statistiques
+                    stats.increment_transcription(text, audio_level)
+
+                    # Afficher dans l'interface
+                    app.root.after(0, app.add_to_history, text, is_emergency)
                     app.root.after(0, app.update_current_text, "")
             else:
                 partial = json.loads(rec.PartialResult())
@@ -405,17 +689,30 @@ def load_model():
 
     print(f"Chargement du modèle depuis {MODEL_PATH}...")
     model = vosk.Model(MODEL_PATH)
-    print("Modèle chargé avec succès!")
+    print("✅ Modèle chargé avec succès!")
     return True
 
 
 def main():
     """Point d'entrée principal"""
-    print("=== Application Speech-to-Text Desktop ===")
+    print("=" * 70)
+    print("🎤 Application Speech-to-Text - VERSION AMÉLIORÉE")
+    print("=" * 70)
+    print("\n📦 Fonctionnalités:")
+    print("  ✅ VAD (Voice Activity Detection)")
+    print("  ✅ Réduction de bruit")
+    print("  ✅ Ponctuation automatique")
+    print("  ✅ Détection d'urgence")
+    print("  ✅ Sauvegarde persistante (SQLite)")
+    print("  ✅ Statistiques en temps réel")
+    print("  ✅ Optimisations performances\n")
 
     if not load_model():
-        print("\nImpossible de démarrer sans le modèle Vosk")
+        print("\n❌ Impossible de démarrer sans le modèle Vosk")
         return
+
+    # Charger le modèle de ponctuation (optionnel, peut prendre du temps)
+    print("Chargement du modèle de ponctuation...")
 
     root = tk.Tk()
     app = SpeechToTextApp(root)
@@ -423,8 +720,9 @@ def main():
     # Gérer la fermeture proprement
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
 
-    print("\nApplication démarrée!")
-    print("Appuyez sur Échap pour quitter le plein écran")
+    print("\n✅ Application démarrée!")
+    print("📝 Appuyez sur Échap pour quitter le plein écran")
+    print(f"💾 Base de données: {db.get_total_count()} transcriptions sauvegardées\n")
 
     root.mainloop()
 

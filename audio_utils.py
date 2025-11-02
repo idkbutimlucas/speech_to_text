@@ -77,18 +77,31 @@ class AudioLevelMeter:
 class SmartPunctuator:
     def __init__(self):
         self.model = None
-        self._load_model()
+        self._model_loaded = False
 
     def _load_model(self):
+        """Lazy loading du modèle ML (uniquement si nécessaire)"""
+        if self._model_loaded:
+            return
         try:
             from deepmultilingualpunctuation import PunctuationModel
+            print("📥 Chargement du modèle de ponctuation ML...")
             self.model = PunctuationModel()
-        except Exception:
+            print("✅ Modèle de ponctuation chargé")
+        except Exception as e:
+            print(f"⚠️  Modèle de ponctuation ML non disponible: {e}")
             self.model = None
+        self._model_loaded = True
 
     def add_punctuation(self, text):
+        """Ponctuation ML avancée (gourmande en CPU)"""
         if not text or not text.strip():
             return text
+
+        # Charger le modèle seulement si nécessaire
+        if not self._model_loaded:
+            self._load_model()
+
         if self.model is None:
             return self._basic_punctuation(text)
         try:
@@ -100,12 +113,36 @@ class SmartPunctuator:
             return self._basic_punctuation(text)
 
     def _basic_punctuation(self, text):
+        """Ponctuation basique améliorée (sans ML)"""
         text = text.strip()
         if not text:
             return text
+
+        # Mots interrogatifs français
+        question_words = ['comment', 'quoi', 'qui', 'où', 'quand', 'pourquoi',
+                         'quel', 'quelle', 'quels', 'quelles', 'combien', 'est-ce']
+
+        # Mots de liaison qui méritent une virgule
+        liaison_words = ['mais', 'donc', 'alors', 'ensuite', 'puis', 'enfin',
+                        'cependant', 'toutefois', 'néanmoins', 'pourtant']
+
+        # Mettre la première lettre en majuscule
         text = text[0].upper() + text[1:]
+
+        # Ajouter des virgules après les mots de liaison en début de phrase
+        words = text.split()
+        if len(words) > 1 and words[0].lower() in liaison_words:
+            text = words[0] + ',' + ' '.join(words[1:])
+
+        # Déterminer la ponctuation finale
         if text[-1] not in '.!?':
-            text += '.'
+            # Si c'est une question
+            first_word = words[0].lower().rstrip(',')
+            if first_word in question_words:
+                text += ' ?'
+            else:
+                text += '.'
+
         return text
 
 

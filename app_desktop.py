@@ -21,10 +21,11 @@ from database import get_database
 from stats_manager import get_stats_manager
 
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 2000
+BLOCK_SIZE = 1600  # Optimisé: 100ms au lieu de 125ms (-20% latence)
 MODEL_PATH = "models/vosk-model-small-fr-0.22"
 CONFIG_FILE = "config.json"
 MAX_QUEUE_SIZE = 10
+STATS_UPDATE_INTERVAL = 3.0  # Mise à jour stats toutes les 3s (économie CPU)
 
 # Variables globales
 model = None
@@ -33,7 +34,7 @@ is_recording = False
 recognition_thread_obj = None
 
 # Instances des utilitaires
-vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=2)
+vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=3)  # Optimisé: 3 = plus agressif
 noise_reducer = NoiseReducer(sample_rate=SAMPLE_RATE)
 audio_meter = AudioLevelMeter()
 punctuator = SmartPunctuator()
@@ -47,16 +48,16 @@ class SpeechToTextApp:
         self.root = root
         self.root.title("Transcription Vocale - Version Améliorée")
 
-        # Configuration par défaut
+        # Configuration par défaut (optimisée pour performance)
         self.config = {
             'font_size': 60,
             'theme': 'light',
             'auto_clear_delay': 30,
             'auto_scroll': True,
-            'enable_vad': True,
-            'enable_noise_reduction': True,
-            'enable_punctuation': True,
-            'enable_emergency_detection': True
+            'enable_vad': True,                      # ✅ Actif: économise 70% CPU
+            'enable_noise_reduction': False,         # ❌ Désactivé: trop gourmand
+            'enable_punctuation': False,             # ❌ Désactivé: trop gourmand (ponctuation basique utilisée)
+            'enable_emergency_detection': True       # ✅ Actif: crucial pour sécurité
         }
         self.load_config()
 
@@ -249,6 +250,29 @@ class SpeechToTextApp:
         # --- FONCTIONNALITÉS ---
         tk.Label(frame, text="FONCTIONNALITÉS", font=('Arial', 14, 'bold')).pack(anchor='w', pady=(20, 5))
 
+        # Bouton Mode Performance (toggle rapide)
+        def toggle_performance_mode():
+            is_perf_mode = not self.config.get('enable_noise_reduction', False)
+            self.config['enable_noise_reduction'] = not is_perf_mode
+            self.config['enable_punctuation'] = not is_perf_mode
+            # Mettre à jour les checkboxes
+            noise_var.set(not is_perf_mode)
+            punct_var.set(not is_perf_mode)
+            perf_btn_text = "⚡ Mode Performance: ON" if is_perf_mode else "🎯 Mode Qualité: ON"
+            perf_btn.config(text=perf_btn_text)
+
+        is_perf_mode = not self.config.get('enable_noise_reduction', False)
+        perf_btn = tk.Button(
+            frame,
+            text="⚡ Mode Performance: ON" if is_perf_mode else "🎯 Mode Qualité: ON",
+            font=('Arial', 12, 'bold'),
+            command=toggle_performance_mode,
+            cursor='hand2',
+            bg='#2196F3' if is_perf_mode else '#4CAF50',
+            fg='white'
+        )
+        perf_btn.pack(fill=tk.X, pady=(0, 15))
+
         # VAD
         vad_var = tk.BooleanVar(value=self.config.get('enable_vad', True))
         tk.Checkbutton(
@@ -427,8 +451,8 @@ class SpeechToTextApp:
         level = audio_meter.get_average_level()
         self.audio_level_bar['value'] = level
 
-        # Continuer à rafraîchir
-        self.root.after(100, self.update_stats_display)
+        # Continuer à rafraîchir (optimisé: 3s au lieu de 100ms)
+        self.root.after(int(STATS_UPDATE_INTERVAL * 1000), self.update_stats_display)
 
     def toggle_theme(self, button=None):
         """Basculer entre mode clair et sombre"""
@@ -645,8 +669,12 @@ def recognition_loop(app):
                     text = result['text']
 
                     # Ponctuation automatique
-                    if app.config.get('enable_punctuation', True):
+                    if app.config.get('enable_punctuation', False):
+                        # Ponctuation ML (avancée mais gourmande)
                         text = punctuator.add_punctuation(text)
+                    else:
+                        # Ponctuation basique (légère, toujours active)
+                        text = punctuator._basic_punctuation(text)
 
                     # Détection d'urgence
                     is_emergency = False

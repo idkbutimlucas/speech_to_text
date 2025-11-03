@@ -255,6 +255,20 @@ def handle_update_config(data):
     emit('config_updated', {'status': 'ok', 'config': config})
 
 
+def auto_start_recording():
+    """Démarre automatiquement la reconnaissance au lancement"""
+    global is_recording
+    import time
+    time.sleep(2)  # Attendre que le serveur soit prêt
+
+    if model is not None and not is_recording:
+        is_recording = True
+        thread = threading.Thread(target=recognition_thread)
+        thread.daemon = True
+        thread.start()
+        print("✅ Reconnaissance vocale démarrée automatiquement")
+
+
 if __name__ == '__main__':
     print("=" * 70)
     print("🎤 Application Speech-to-Text Web - VERSION AMÉLIORÉE")
@@ -269,7 +283,13 @@ if __name__ == '__main__':
     print("  ✅ Optimisations performances\n")
 
     if load_model():
+        # Démarrer automatiquement la reconnaissance (comme app_desktop.py)
+        auto_start_thread = threading.Thread(target=auto_start_recording)
+        auto_start_thread.daemon = True
+        auto_start_thread.start()
+
         print("\nDémarrage du serveur sur http://localhost:5001")
+        print("🎤 La reconnaissance démarre automatiquement")
         print("Appuyez sur Ctrl+C pour arrêter")
         print(f"💾 Base de données: {db.get_total_count()} transcriptions sauvegardées\n")
         socketio.run(app, host='0.0.0.0', port=5001, debug=False, allow_unsafe_werkzeug=True)

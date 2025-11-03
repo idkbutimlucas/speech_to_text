@@ -24,7 +24,7 @@ app.config['SECRET_KEY'] = 'votre_cle_secrete_changez_moi'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 1600  # Optimisé: 100ms au lieu de 125ms (-20% latence)
+BLOCK_SIZE = 960  # 60ms - Compatible avec VAD (multiple de 480)
 MODEL_PATH = "models/vosk-model-small-fr-0.22"
 MAX_QUEUE_SIZE = 10
 
@@ -34,7 +34,7 @@ audio_queue = queue.Queue()
 is_recording = False
 
 # Instances des utilitaires
-vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=3)  # Optimisé: 3 = plus agressif
+vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=1)  # 1 = peu agressif, meilleure détection
 noise_reducer = NoiseReducer(sample_rate=SAMPLE_RATE)
 audio_meter = AudioLevelMeter()
 punctuator = SmartPunctuator()
@@ -42,12 +42,12 @@ emergency_detector = EmergencyDetector()
 db = get_database()
 stats = get_stats_manager()
 
-# Configuration optimisée pour performance (peut être modifié par l'utilisateur)
+# Configuration équilibrée (peut être modifié par l'utilisateur)
 config = {
-    'enable_vad': True,                      # ✅ Actif: économise 70% CPU
-    'enable_noise_reduction': False,         # ❌ Désactivé: trop gourmand
-    'enable_punctuation': False,             # ❌ Désactivé: trop gourmand (ponctuation basique utilisée)
-    'enable_emergency_detection': True       # ✅ Actif: crucial pour sécurité
+    'enable_vad': True,                      # ✅ VAD activé
+    'enable_noise_reduction': True,          # ✅ Actif pour meilleure qualité
+    'enable_punctuation': True,              # ✅ Actif pour lisibilité
+    'enable_emergency_detection': True       # ✅ Actif pour sécurité
 }
 
 
@@ -133,7 +133,7 @@ def recognition_thread():
                         # Ponctuation ML (avancée mais gourmande)
                         text = punctuator.add_punctuation(text)
                     else:
-                        # Ponctuation basique (légère, toujours active)
+                        # Ponctuation basique (légère)
                         text = punctuator._basic_punctuation(text)
 
                     # Détection d'urgence

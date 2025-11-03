@@ -21,11 +21,11 @@ from database import get_database
 from stats_manager import get_stats_manager
 
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 1600  # Optimisé: 100ms au lieu de 125ms (-20% latence)
+BLOCK_SIZE = 960  # 60ms - Compatible avec VAD (multiple de 480)
 MODEL_PATH = "models/vosk-model-small-fr-0.22"
 CONFIG_FILE = "config.json"
 MAX_QUEUE_SIZE = 10
-STATS_UPDATE_INTERVAL = 3.0  # Mise à jour stats toutes les 3s (économie CPU)
+STATS_UPDATE_INTERVAL = 1.0  # Mise à jour stats toutes les 1s
 
 # Variables globales
 model = None
@@ -34,7 +34,7 @@ is_recording = False
 recognition_thread_obj = None
 
 # Instances des utilitaires
-vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=3)  # Optimisé: 3 = plus agressif
+vad = VoiceActivityDetector(sample_rate=SAMPLE_RATE, aggressiveness=1)  # 1 = peu agressif, meilleure détection
 noise_reducer = NoiseReducer(sample_rate=SAMPLE_RATE)
 audio_meter = AudioLevelMeter()
 punctuator = SmartPunctuator()
@@ -48,16 +48,16 @@ class SpeechToTextApp:
         self.root = root
         self.root.title("Transcription Vocale - Version Améliorée")
 
-        # Configuration par défaut (optimisée pour performance)
+        # Configuration par défaut (équilibrée)
         self.config = {
             'font_size': 60,
             'theme': 'light',
             'auto_clear_delay': 30,
             'auto_scroll': True,
-            'enable_vad': True,                      # ✅ Actif: économise 70% CPU
-            'enable_noise_reduction': False,         # ❌ Désactivé: trop gourmand
-            'enable_punctuation': False,             # ❌ Désactivé: trop gourmand (ponctuation basique utilisée)
-            'enable_emergency_detection': True       # ✅ Actif: crucial pour sécurité
+            'enable_vad': True,                      # ✅ VAD activé
+            'enable_noise_reduction': True,          # ✅ Actif pour meilleure qualité
+            'enable_punctuation': True,              # ✅ Actif pour lisibilité
+            'enable_emergency_detection': True       # ✅ Actif pour sécurité
         }
         self.load_config()
 
@@ -192,14 +192,29 @@ class SpeechToTextApp:
         settings_window = tk.Toplevel(self.root)
         settings_window.title("Paramètres")
         settings_window.geometry("600x700")
-        settings_window.resizable(False, False)
+        settings_window.resizable(True, True)
 
         # Centrer la fenêtre
         settings_window.transient(self.root)
         settings_window.grab_set()
 
-        frame = tk.Frame(settings_window, padx=30, pady=30)
-        frame.pack(fill=tk.BOTH, expand=True)
+        # Canvas avec scrollbar pour permettre le défilement
+        canvas = tk.Canvas(settings_window)
+        scrollbar = tk.Scrollbar(settings_window, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, padx=30, pady=30)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        frame = scrollable_frame
 
         # Titre
         title = tk.Label(frame, text="Paramètres", font=('Arial', 20, 'bold'))
@@ -252,23 +267,31 @@ class SpeechToTextApp:
 
         # Bouton Mode Performance (toggle rapide)
         def toggle_performance_mode():
-            is_perf_mode = not self.config.get('enable_noise_reduction', False)
-            self.config['enable_noise_reduction'] = not is_perf_mode
-            self.config['enable_punctuation'] = not is_perf_mode
-            # Mettre à jour les checkboxes
-            noise_var.set(not is_perf_mode)
-            punct_var.set(not is_perf_mode)
-            perf_btn_text = "⚡ Mode Performance: ON" if is_perf_mode else "🎯 Mode Qualité: ON"
-            perf_btn.config(text=perf_btn_text)
+            # Si on est en mode Qualité (avec features activées), passer en Performance
+            if self.config.get('enable_noise_reduction', True):
+                # Activer Mode Performance (désactiver features gourmandes)
+                self.config['enable_noise_reduction'] = False
+                self.config['enable_punctuation'] = False
+                noise_var.set(False)
+                punct_var.set(False)
+                perf_btn.config(text="⚡ Mode Performance: ON", bg='#2196F3')
+            else:
+                # Activer Mode Qualité (activer features)
+                self.config['enable_noise_reduction'] = True
+                self.config['enable_punctuation'] = True
+                noise_var.set(True)
+                punct_var.set(True)
+                perf_btn.config(text="🎯 Mode Qualité: ON", bg='#4CAF50')
 
-        is_perf_mode = not self.config.get('enable_noise_reduction', False)
+        # Déterminer l'état initial
+        is_quality_mode = self.config.get('enable_noise_reduction', True)
         perf_btn = tk.Button(
             frame,
-            text="⚡ Mode Performance: ON" if is_perf_mode else "🎯 Mode Qualité: ON",
+            text="🎯 Mode Qualité: ON" if is_quality_mode else "⚡ Mode Performance: ON",
             font=('Arial', 12, 'bold'),
             command=toggle_performance_mode,
             cursor='hand2',
-            bg='#2196F3' if is_perf_mode else '#4CAF50',
+            bg='#4CAF50' if is_quality_mode else '#2196F3',
             fg='white'
         )
         perf_btn.pack(fill=tk.X, pady=(0, 15))
@@ -669,11 +692,11 @@ def recognition_loop(app):
                     text = result['text']
 
                     # Ponctuation automatique
-                    if app.config.get('enable_punctuation', False):
+                    if app.config.get('enable_punctuation', True):
                         # Ponctuation ML (avancée mais gourmande)
                         text = punctuator.add_punctuation(text)
                     else:
-                        # Ponctuation basique (légère, toujours active)
+                        # Ponctuation basique (légère)
                         text = punctuator._basic_punctuation(text)
 
                     # Détection d'urgence
